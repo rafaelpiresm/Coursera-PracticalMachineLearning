@@ -1,0 +1,77 @@
+---
+title: "Human Activity Recognition"
+author: "Rafael Mendes"
+date: "20/09/2014"
+output: html_document
+---
+
+Human Activity Recognition - HAR - has emerged as a key research area in the last years and is gaining increasing attention by the pervasive computing research community (see picture below, that illustrates the increasing number of publications in HAR with wearable accelerometers), especially for the development of context-aware systems. There are many potential applications for HAR, like: elderly monitoring, life log systems for monitoring energy expenditure and for supporting weight-loss programs, and digital assistants for weight lifting exercises.
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3Due7rGty
+
+```{r, echo=FALSE}
+library(caret)
+library(doParallel)
+```
+
+First, we need to load the dataset:
+```{r}
+setwd('/home/fatchel/coursera/practical machine learning')
+data = read.csv('pml-training.csv')
+```
+
+Doing some exploratory analysis, we identify that we have a lot of features missing values. So, we write a little function to inspect all these features and calculate a percentage of missing information. For our surprise, our dataset is fragmented basically in two uniform distributions: feeatures that have 100% of information, and features that have about 2% of information.
+
+```{r}
+infoColunasTrain <- matrix(ncol=2, nrow=ncol(data))
+j = 1
+for (i in colnames(data)) {
+  infoColunasTrain[j,1] = i
+  infoColunasTrain[j,2] = as.numeric(as.numeric(sum(!is.na(data[,i]) & data[,i] != '') / nrow(data))*100)
+  j = j + 1  
+}
+df = data.frame(infoColunasTrain)
+colnames(df)= c('ColumnName','InformationPercentage')
+df$InformationPercentage = as.numeric(as.character(df$InformationPercentage))
+```
+
+```{r, echo=FALSE, fig.width=9, fig.height=3}
+df100 = subset(df, InformationPercentage > 2.1)
+df2 = subset(df, InformationPercentage <= 2.1)
+
+ggplot(df100, aes(x=ColumnName, y=InformationPercentage)) + geom_bar(alpha=0.9,  colour='blue', stat='identity', position='dodge') +
+  xlab('Features about 100%') + ylab('Percentage of Information') + scale_y_continuous(limits=c(0, 100)) + theme(axis.text.y = element_text(angle = 30, hjust = 0.1, vjust = 1.5)) + theme(axis.text.y = element_text(size=13, colour = rgb(0,0,0))) + theme(axis.text.x = element_text(size=0)) + ggtitle('Features, where percentage of information is about 100%')
+
+ggplot(df2, aes(x=ColumnName, y=InformationPercentage)) + geom_bar(alpha=0.9, colour='blue', stat='identity', position='dodge') +
+  xlab('Features about 2%') + ylab('Percentage of Information') + scale_y_continuous(limits=c(0, 100)) + theme(axis.text.y = element_text(angle = 30, hjust = 0.1, vjust = 1.5)) + theme(axis.text.y = element_text(size=13, colour = rgb(0,0,0))) + theme(axis.text.x = element_text(size=0)) +  ggtitle('Features, where percentage of information is about 2%')
+```
+
+So, we just throw out all features that have about 2% of information and create our training/hold out datasets, but, before, we need 
+discard some features that's no make sense in our analysis, or do not explain reasonable variance:
+
+```{r}
+data_completed = data[,colnames(data)[df$InformationPercentage / 100 == 1.0]]
+data_completed$X = NULL
+data_completed$user_name = NULL
+data_completed$cvtd_timestamp = NULL
+data_completed$new_window = NULL
+
+set.seed(32323)
+split = createDataPartition(data_completed$classe, p=0.60, list=FALSE)
+train = data_completed[split,]
+test = data_completed[-split,]
+```
+
+Now we will use our datasets to fit a random forest model based, and accordingly with this link: http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr, we don't need to make cross validation.
+```{r}
+registerDoParallel()
+m = train(classe ~  . -num_window, data=train, method='rf')
+p = predict(m$finalModel, newdata=test, type='class')
+```
+So, this is our confusion matrix:
+```{r}
+confusionMatrix(p,test$classe)
+```
+And our model:
+```{r}
+m$finalModel
+```
